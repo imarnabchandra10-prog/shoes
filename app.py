@@ -1,10 +1,11 @@
 import streamlit as st
 from pymongo import MongoClient
 import bcrypt
+import pandas as pd
 
-# ---------------------------------------
-# MongoDB Connection (Using Streamlit Secrets)
-# ---------------------------------------
+# -------------------------------------------------
+# MongoDB Connection (from Streamlit secrets)
+# -------------------------------------------------
 mongo_url = st.secrets["mongo"]["url"]
 client = MongoClient(mongo_url)
 db = client["shopping_portal"]
@@ -12,9 +13,9 @@ users = db["users"]
 products = db["products"]
 orders = db["orders"]
 
-# ---------------------------------------
-# Auto-create Admin on First Run
-# ---------------------------------------
+# -------------------------------------------------
+# Ensure Admin Exists (Auto create from secrets)
+# -------------------------------------------------
 def ensure_admin_exists():
     admin_user = st.secrets["admin"]["username"]
     admin_pass = st.secrets["admin"]["password"]
@@ -29,9 +30,9 @@ def ensure_admin_exists():
 
 ensure_admin_exists()
 
-# ---------------------------------------
+# -------------------------------------------------
 # Helper Functions
-# ---------------------------------------
+# -------------------------------------------------
 def create_user(username, password, role):
     if users.find_one({"username": username}):
         st.warning("⚠️ User already exists!")
@@ -46,12 +47,12 @@ def login_user(username, password):
         return user
     return None
 
-# ---------------------------------------
+# -------------------------------------------------
 # Admin Page
-# ---------------------------------------
+# -------------------------------------------------
 def admin_page():
-    st.title("🛒 Admin Dashboard")
-    st.subheader("Manage Users & Products")
+    st.title("👑 Admin Dashboard")
+    st.subheader("Manage Users, Products, and Transactions")
 
     # --- Create Users ---
     st.write("### 👥 Create New User")
@@ -64,66 +65,85 @@ def admin_page():
     st.divider()
 
     # --- Add Products ---
-    st.write("### 📦 Add New Product")
-    pname = st.text_input("Product Name", key="product_name")
-    price = st.number_input("Product Price (₹)", min_value=1, key="price")
-    if st.button("Add Product"):
+    st.write("### 👟 Add New Shoe Product")
+    pname = st.text_input("Shoe Name", key="product_name")
+    price = st.number_input("Shoe Price (₹)", min_value=1, key="price")
+    if st.button("Add Shoe"):
         if pname.strip():
             products.insert_one({"name": pname, "price": price})
-            st.success(f"✅ Product '{pname}' added successfully!")
+            st.success(f"✅ Shoe '{pname}' added successfully!")
         else:
-            st.warning("⚠️ Enter a valid product name.")
+            st.warning("⚠️ Enter a valid shoe name.")
 
     st.divider()
 
     # --- Show Products ---
-    st.write("### 🧾 Product List")
+    st.write("### 🧾 Shoe List")
     all_products = list(products.find())
     if all_products:
-        for p in all_products:
-            st.write(f"• {p['name']} — ₹{p['price']}")
+        df_products = pd.DataFrame(all_products)
+        df_products = df_products[["name", "price"]]
+        df_products.columns = ["Shoe Name", "Price (₹)"]
+        st.dataframe(df_products, use_container_width=True)
     else:
-        st.info("No products added yet.")
+        st.info("No shoes added yet.")
 
-# ---------------------------------------
+    st.divider()
+
+    # --- Show All Transactions ---
+    st.write("### 💰 All User Transactions")
+    all_orders = list(orders.find())
+    if all_orders:
+        df_orders = pd.DataFrame(all_orders)
+        df_orders = df_orders[["username", "product", "price"]]
+        df_orders.columns = ["Username", "Shoe Bought", "Price (₹)"]
+        st.dataframe(df_orders, use_container_width=True)
+    else:
+        st.info("No transactions yet.")
+
+# -------------------------------------------------
 # User Page
-# ---------------------------------------
+# -------------------------------------------------
 def user_page(username):
     st.title(f"Welcome, {username} 👋")
-    st.subheader("🛍️ Browse & Buy Products")
+    st.subheader("🛍️ Browse & Buy Shoes")
 
     all_products = list(products.find())
     if not all_products:
-        st.info("No products available yet.")
+        st.info("No shoes available yet. Please check later.")
         return
 
-    # --- Display Products ---
     for p in all_products:
         col1, col2 = st.columns([3, 1])
         with col1:
             st.write(f"**{p['name']}** — ₹{p['price']}")
         with col2:
             if st.button(f"Buy {p['name']}", key=str(p['_id'])):
-                orders.insert_one({"username": username, "product": p['name'], "price": p['price']})
+                orders.insert_one({
+                    "username": username,
+                    "product": p['name'],
+                    "price": p['price']
+                })
                 st.success(f"✅ Order placed for {p['name']}!")
 
     st.divider()
 
-    # --- Order History ---
     st.write("### 🧾 Your Orders")
     user_orders = list(orders.find({"username": username}))
     if user_orders:
-        for o in user_orders:
-            st.write(f"- {o['product']} — ₹{o['price']}")
+        df = pd.DataFrame(user_orders)
+        df = df[["product", "price"]]
+        df.columns = ["Shoe", "Price (₹)"]
+        st.dataframe(df, use_container_width=True)
     else:
         st.info("You haven’t placed any orders yet.")
 
-# ---------------------------------------
+# -------------------------------------------------
 # Login Page
-# ---------------------------------------
+# -------------------------------------------------
 def login_page():
-    st.title("🛒 Shopping Portal Login")
-    st.subheader("Login with your credentials")
+    st.title("🛒 Shoe Shopping Portal Login")
+    st.subheader("Enter your credentials to continue")
 
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -133,13 +153,14 @@ def login_page():
         if user:
             st.session_state["user"] = user
             st.success(f"Welcome {user['username']}!")
-            st.experimental_rerun()
+            st.session_state["page"] = "dashboard"
+            st.stop()
         else:
             st.error("Invalid username or password.")
 
-# ---------------------------------------
-# Main App
-# ---------------------------------------
+# -------------------------------------------------
+# Main Function
+# -------------------------------------------------
 def main():
     st.sidebar.title("Navigation")
 
@@ -152,7 +173,7 @@ def main():
         if st.sidebar.button("Logout"):
             del st.session_state["user"]
             st.success("Logged out successfully!")
-            st.experimental_rerun()
+            st.stop()
 
         if user["role"] == "admin":
             admin_page()
