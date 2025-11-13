@@ -3,7 +3,7 @@ from pymongo import MongoClient
 import bcrypt
 
 # ---------------------------------------
-# MongoDB Connection (secure via Streamlit Secrets)
+# MongoDB Connection (Using Streamlit Secrets)
 # ---------------------------------------
 mongo_url = st.secrets["mongo"]["url"]
 client = MongoClient(mongo_url)
@@ -11,6 +11,23 @@ db = client["shopping_portal"]
 users = db["users"]
 products = db["products"]
 orders = db["orders"]
+
+# ---------------------------------------
+# Auto-create Admin on First Run
+# ---------------------------------------
+def ensure_admin_exists():
+    admin_user = st.secrets["admin"]["username"]
+    admin_pass = st.secrets["admin"]["password"]
+    existing_admin = users.find_one({"username": admin_user, "role": "admin"})
+
+    if not existing_admin:
+        hashed_pw = bcrypt.hashpw(admin_pass.encode("utf-8"), bcrypt.gensalt())
+        users.insert_one({"username": admin_user, "password": hashed_pw, "role": "admin"})
+        print(f"✅ Admin '{admin_user}' created automatically.")
+    else:
+        print("✅ Admin already exists.")
+
+ensure_admin_exists()
 
 # ---------------------------------------
 # Helper Functions
